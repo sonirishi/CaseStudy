@@ -9,23 +9,29 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.preprocessing import label_binarize
 import seaborn as sns
 
-data = pd.read_csv("../Problem_Data.csv")
+######### Read data and do some basic checks #########
 
-data.head(5)
+case_data = pd.read_csv("../Problem_Data.csv")
 
-data.columns
+case_data.head(5)
 
-data.User_ProfileTitle.isnull().sum()/data.shape[0]  # 32% missing
+case_data.columns
 
-data.User_SubFunctional_Area.value_counts()
+case_data.User_ProfileTitle.isnull().sum()/case_data.shape[0]  # 32% missing
 
-data.User_Industry.value_counts()
+case_data.User_SubFunctional_Area.value_counts()
 
-data.User_ProfileTitle.value_counts()
+case_data.User_Industry.value_counts()
+
+case_data.User_ProfileTitle.value_counts()
+
+############ Download the pre trained word2vec google model and load ##############
+
+###### Location: https://github.com/mmihaltz/word2vec-GoogleNews-vectors ########
 
 path_w2v_pretrained_model = "../GoogleNews-vectors-negative300.bin"
 
-### Lemmatization of the data
+### Lemmatization of the data using NLTK ############
 
 def lemmatize_only(data,var):
     final_data = []
@@ -39,16 +45,16 @@ def lemmatize_only(data,var):
         final_data.append(lemma_temp1.lstrip())
     return np.array(final_data)
 
-data.User_ProfileTitle.fillna("blank",inplace=True)
+case_data.User_ProfileTitle.fillna("blank",inplace=True)
     
-data["User_JobTitle_lemma"] = lemmatize_only(data,"User_JobTitle")
-data["User_Skills_lemma"] = lemmatize_only(data,"User_Skills")
-data["User_ProfileTitle_lemma"] = lemmatize_only(data,"User_ProfileTitle")
-data["User_Industry_lemma"] = lemmatize_only(data,"User_Industry")
+case_data["User_JobTitle_lemma"] = lemmatize_only(case_data,"User_JobTitle")
+case_data["User_Skills_lemma"] = lemmatize_only(case_data,"User_Skills")
+case_data["User_ProfileTitle_lemma"] = lemmatize_only(case_data,"User_ProfileTitle")
+case_data["User_Industry_lemma"] = lemmatize_only(case_data,"User_Industry")
 
 similarity_model = Word2Vec.load_word2vec_format(path_w2v_pretrained_model, binary=True)
 
-## Calculate the word2vec similarity model from google pre-trained vectors
+## Calculate the word2vec similarity model from google pre-trained vectors #########
 
 def calc_w2v(row,var):
     
@@ -61,19 +67,19 @@ def calc_w2v(row,var):
 
 w2v_jobtitle = pd.DataFrame()
 
-for i,row in data.iterrows():
+for i,row in case_data.iterrows():
     vector = pd.DataFrame(calc_w2v(row,"User_JobTitle_lemma")).T
     w2v_jobtitle = pd.concat((w2v_jobtitle,vector),axis=0)
 
 w2v_industry = pd.DataFrame()
 
-for i,row in data.iterrows():
+for i,row in case_data.iterrows():
     vector = pd.DataFrame(calc_w2v(row,"User_Industry_lemma")).T
     w2v_industry = pd.concat((w2v_industry,vector),axis=0)
 
 w2v_skills = pd.DataFrame()
 
-for i,row in data.iterrows():
+for i,row in case_data.iterrows():
     vector = pd.DataFrame(calc_w2v(row,"User_Skills_lemma")).T
     w2v_skills = pd.concat((w2v_skills,vector),axis=0)
 
@@ -89,7 +95,7 @@ w2v_jobtitle.to_csv("../w2v_jobtitle.csv")
 
 w2v_skills.to_csv("../w2v_skills.csv")
 
-## Frequency based encoding
+## Frequency based encoding for all the string variables #########
 
 def cat_count(data,variable):
     count_var = pd.DataFrame(data[variable].value_counts())
@@ -105,15 +111,17 @@ def count_str(data,variable):
     data = pd.concat((data,count),axis=1)
     return data
     
-data = cat_count(data,"User_JobTitle_lemma")
+case_data = cat_count(case_data,"User_JobTitle_lemma")
 
-data = cat_count(data,"User_Industry_lemma")
+case_data = cat_count(case_data,"User_Industry_lemma")
 
-data = cat_count(data,"User_ProfileTitle_lemma")
+case_data = cat_count(case_data,"User_ProfileTitle_lemma")
     
-data = count_str(data,"User_Skills_lemma")
+case_data = count_str(case_data,"User_Skills_lemma")
     
-data.to_csv("../data.csv")   
+case_data.to_csv("../case_data.csv")   
+
+############ Append all the variables created into one data frame ##########
 
 w2v_industry.reset_index(inplace=True)
 
@@ -127,7 +135,7 @@ w2v_skills.reset_index(inplace=True)
 
 w2v_skills.drop("index",axis=1,inplace=True)
     
-full_data = pd.concat((data,w2v_industry,w2v_jobtitle,w2v_skills),axis=1)
+full_data = pd.concat((case_data,w2v_industry,w2v_jobtitle,w2v_skills),axis=1)
 
 full_data.to_csv("../final_data.csv")
 
@@ -135,10 +143,14 @@ full_data = pd.read_csv("../final_data.csv")
 
 full_data.drop('Unnamed: 0',axis=1,inplace=True)
 
+######### Encode the target ##########
+
 dictmap = {"Network / System Administration": "1", "Telecom Network Design / Management": "2",
         "Hardware / Telecom Equipment Design": "3", "Embedded, VLSI": "4"}
         
 full_data.rename(columns = {"User_Experience (Years)":"yrs_exp"},inplace=True)
+
+########## Missing value imputation and create missing value indicator #########
         
 full_data["yrs_exp_1"] = full_data.yrs_exp.map(lambda x: 0 if x == "<.01" else x)
 
@@ -152,7 +164,7 @@ full_data["ind_yrsexp"] = full_data.yrs_exp_1.map(lambda x: 1 if x == -99 else 0
 
 full_data["ind_w2v_skills"] = full_data.w2v_skills_1.map(lambda x: 1 if x == -99 else 0)
 
-# tree based model to imputing by an extreme value
+### Keep only the created variables, drop all strings ###########
 
 full_data.drop(["User_SubFunctional_Area","User_Functional_Area","User_JobTitle","User_ProfileTitle",
                 "User_Industry","User_Skills","User_Skills_lemma","User_ProfileTitle_lemma",
@@ -163,7 +175,9 @@ y = full_data[["y"]]
 full_data.drop("y",axis=1,inplace=True)
 
 full_data.to_csv("../final_data1.csv")
-        
+
+######## Train test split 70-30 ##############
+
 train_data, test_data, train_y, test_y = train_test_split(full_data, y, test_size=0.3, random_state=1234)
 train_y = train_y.reset_index(); test_y = test_y.reset_index()
 del train_y["index"]; del test_y["index"]
@@ -175,6 +189,8 @@ train_data.drop("index",axis=1,inplace=True)
 test_data.reset_index(inplace=True)
 
 test_data.drop("index",axis=1,inplace=True)
+
+############ K Means clusters on all variables ############
 
 from sklearn.cluster import KMeans
 
@@ -188,6 +204,8 @@ train_cluster.drop("index",axis=1,inplace=True)
 
 train_cluster.columns = ["cluster"]
 
+########## Predict the cluster on test data; use this as a feature as well ##########
+
 test_cluster = pd.DataFrame(cluster_embeddings.predict(test_data))
 
 test_cluster.columns = ["cluster"]
@@ -200,12 +218,14 @@ train_data = pd.concat((train_data,train_cluster),axis=1)
 
 test_data = pd.concat((test_data,test_cluster),axis=1)
 
-############# Feature Selection ###############
+############# Feature Selection using RF ###############
 
 rf_fs = RandomForestClassifier(criterion = "entropy", max_depth = 8, min_samples_leaf = 10, n_jobs = -1, 
                                   n_estimators = 500, oob_score = False, max_features = 'log2',random_state=1234)
                                   
 rf_fs.fit(train_data,np.ravel(train_y))
+
+############ Feature Importance Metrics ###########
 
 importance = rf_fs.feature_importances_
 
@@ -226,6 +246,8 @@ y = label_binarize(train_y, classes=["1", "2", "3", "4"])
 from sklearn.multiclass import OneVsRestClassifier
 
 np.random.seed = 2017
+
+############## Grid Search parameter Tuning, for multi class using one vs all classifier ####################
 
 gbm_model =  OneVsRestClassifier(GradientBoostingClassifier())
                                             
@@ -254,12 +276,14 @@ print (cv_gbm_model.best_params_)
 
 print (cv_gbm_model.best_score_)
 
-######## Final Model
+######## Final Model GBM ############
 
 gbm_model =  GradientBoostingClassifier(learning_rate = 0.03, n_estimators = 200, max_depth = 8, min_samples_leaf = 5,
                                         subsample = 0.8, max_features=0.7)
 
 gbm_model.fit(train_data1, np.ravel(train_y))
+
+########## Test data accuracy Measure #############
 
 test_pred = gbm_model.predict(test_data.loc[:,feature_names])
 
@@ -268,6 +292,8 @@ test = pd.concat((pd.DataFrame(test_pred),test_y),axis=1)
 test.columns = ["pred","actual"]
 
 pd.crosstab(test.pred,test.actual)
+
+######## Model Feature Importance ##########
 
 importance_1 = gbm_model.feature_importances_
 
@@ -281,10 +307,22 @@ var_imp1.reset_index(inplace=True)
 
 var_imp1.drop("index",axis=1,inplace=True)
 
+######## Feature Importance Plots ###############
+
 sns.barplot(var_imp1.loc[0:10,"col_name"],var_imp1.loc[0:10,"var_imp"])
 
 test_prob = gbm_model.predict_proba(test_data.loc[:,feature_names])
 
 test_prob1 = pd.concat((pd.DataFrame(test_prob),test_y),axis=1)
 
+########## Some QC on low accuracy of class 3 #############
+
 test_prob1_3 = test_prob1.loc[test_prob1.y == "3",]
+
+train_pred = gbm_model.predict(train_data1.loc[:,feature_names])
+
+train = pd.concat((pd.DataFrame(train_pred),train_y),axis=1)
+
+train.columns = ["pred","actual"]
+
+pd.crosstab(train.pred,train.actual)
